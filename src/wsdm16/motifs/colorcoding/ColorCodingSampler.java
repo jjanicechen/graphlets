@@ -108,6 +108,7 @@ public class ColorCodingSampler
 		}*/
 		
 		// 3. SAMPLE
+		int numberOfComparisonOperation = 0;
 		isomorphisms = new LazyGraphIsomorphisms(k);
 		BaseColorCoding C = null;
 		if(alon)
@@ -126,6 +127,7 @@ public class ColorCodingSampler
 		pl.logger().info("Coloring...");
 
 		C.color();
+		numberOfComparisonOperation += G.numNodes();
 		
 		pl.logger().info("Filling tables using "+ numThreads +" threads...");
 		
@@ -143,6 +145,7 @@ public class ColorCodingSampler
 
 		pl.logger().info("Building structures");
 		C.buildStructures(k);
+		numberOfComparisonOperation += 2*G.numNodes();
 
 		pl.logger().info("Heap used: " + Runtime.getRuntime().totalMemory() + " max: "+ Runtime.getRuntime().maxMemory());
 
@@ -177,6 +180,7 @@ public class ColorCodingSampler
 		{
 			rejected += sr.getRejected();
 			accepted += sr.getAccepted();
+			numberOfComparisonOperation += sr.getNumOfCompOp();
 			
 			for(Long2LongMap.Entry e : sr.getSamples())
 				hashCount.addTo(e.getLongKey(), e.getLongValue());
@@ -192,7 +196,9 @@ public class ColorCodingSampler
 		pl.logger().info("Sampled " + numSamples + " motif occurrences in " + duration + " seconds ("+ new DecimalFormat("#.##").format(numSamples/duration) + "occ/s))");
 		pl.logger().info("Sampled " + (numSamples + rejected) + " treelet occurrences in " + duration + " seconds ("+ new DecimalFormat("#.##").format((numSamples+rejected)/duration) + "occ/s))");
 		pl.logger().info("Rejected " + rejected + " treelets (" + new DecimalFormat("#.##").format(100*((double)rejected)/(numSamples+rejected)) + "%)");
-		
+
+		pl.logger().info("Comparison operation used for counting GFD: " + numberOfComparisonOperation);
+
 		System.out.println("== SAMPLES FOLLOW ==");
 		for(Map.Entry<Long, Long> e : hashCount.entrySet())
 			System.out.println(e.getKey() + ": " + e.getValue() + " ("+ e.getValue()*100.0/numSamples +"%)");
@@ -207,6 +213,7 @@ public class ColorCodingSampler
     	private RandomGenerator random;
 		private Long2LongOpenHashMap hashCount;
 		private ImmutableGraph graph;
+		private int numOfCompOp;
 		
     	public SamplerRunnable(IColorCodingSampler sampler)
     	{
@@ -215,6 +222,7 @@ public class ColorCodingSampler
     		random = new Well19937c();
     		hashCount = new Long2LongOpenHashMap();
     		graph = sampler.getGraph();
+			numOfCompOp = 0;
     	}
 
     	public int getAccepted() 
@@ -226,6 +234,8 @@ public class ColorCodingSampler
     	{
 			return rejected;
 		}
+
+		public int getNumOfCompOp() {return numOfCompOp; }
 
     	public FastEntrySet getSamples()
     	{
@@ -245,6 +255,7 @@ public class ColorCodingSampler
 				while(true)
 				{
 		    		List<Integer> L= sampler.sample();
+					numOfCompOp += 1;
 		    		assert(L.size() == k);
 	
 		    		Graphlet occ = new Graphlet(graph, L);
@@ -253,6 +264,7 @@ public class ColorCodingSampler
 		    		assert(occ.size()==k);
 		    
 		    		ImmutableGraph H = occ.asGraph();
+					numOfCompOp += 1;
 		    		assert(H.numNodes()==k);
 		    		
 					long hash = isomorphisms.long_signature(H);
@@ -268,14 +280,17 @@ public class ColorCodingSampler
 		        		assert(st>0);
 		        		spanning_trees.putIfAbsent(hash, st);
 		    		}
+		    		numOfCompOp += 1;
 		    		
 		    		if(random.nextDouble()<=1.0/st) //Rejection
-		    		{    					
+					{
+						numOfCompOp += 1;
 					    hashCount.addTo(hash, 1);
 					    accepted++;
 					    break;
 		    		}
-		    		
+
+					numOfCompOp += 1;
 		    		rejected++;
 				}
 			}
